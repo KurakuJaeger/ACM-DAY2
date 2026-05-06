@@ -1,0 +1,187 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TypeShift: Hackathon Trivia</title>
+  <link rel="stylesheet" href="{% static 'typeshift/style.css' %}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet" />
+</head>
+<body class="genre-ph" data-genre="ph">
+
+  <!-- ===== SCANLINE OVERLAY ===== -->
+  <div class="scanlines" aria-hidden="true"></div>
+  <div class="pixel-noise" aria-hidden="true"></div>
+
+  <!-- ===== SCREEN: LANDING ===== -->
+  <section id="screen-landing" class="screen active">
+    <div class="landing-wrap">
+      <div class="logo-block">
+        <div class="logo-pixel-border">
+          <h1 class="logo-title">TYPE<span class="logo-accent">SHIFT</span></h1>
+          <p class="logo-sub">HACKATHON TRIVIA</p>
+        </div>
+        <div class="pixel-deco deco-1" aria-hidden="true"></div>
+        <div class="pixel-deco deco-2" aria-hidden="true"></div>
+        <div class="pixel-deco deco-3" aria-hidden="true"></div>
+      </div>
+
+      <p class="landing-desc">60 SECONDS. 3 WORLDS. HOW SMART ARE YOU?</p>
+
+      <div class="genre-select-label">CHOOSE YOUR WORLD</div>
+      <div class="genre-grid">
+        <button class="genre-btn active" data-genre="ph" aria-label="Philippines Knowledge and Society">
+          <span class="genre-icon">🇵🇭</span>
+          <span class="genre-name">PILIPINAS</span>
+          <span class="genre-desc">History · Culture · Politics</span>
+        </button>
+        <button class="genre-btn" data-genre="academic" aria-label="Academic and Logical Thinking">
+          <span class="genre-icon">🔬</span>
+          <span class="genre-name">AKADEMYA</span>
+          <span class="genre-desc">Science · Math · Logic · IT</span>
+        </button>
+        <button class="genre-btn" data-genre="ent" aria-label="Entertainment and Global Trends">
+          <span class="genre-icon">🎮</span>
+          <span class="genre-name">TRENDZONE</span>
+          <span class="genre-desc">Movies · Music · Gaming</span>
+        </button>
+      </div>
+
+      <div class="difficulty-select-label">SELECT DIFFICULTY</div>
+      <div class="difficulty-grid">
+        <button class="diff-btn active" data-diff="easy">EASY</button>
+        <button class="diff-btn" data-diff="medium">MEDIUM</button>
+        <button class="diff-btn" data-diff="hard">HARD</button>
+      </div>
+
+      <div class="landing-actions">
+        <button id="btn-play" class="btn-primary pixel-btn">▶ START GAME</button>
+        <button id="btn-scores" class="btn-secondary pixel-btn">🏆 RANKINGS</button>
+      </div>
+
+      <p class="landing-footer">MADE FOR FILIPINO STUDENTS · TYPESHIFT HACKATHON 2025</p>
+    </div>
+  </section>
+
+  <!-- ===== SCREEN: GAME ===== -->
+  <section id="screen-game" class="screen">
+    <div class="game-hud">
+      <div class="hud-left">
+        <button class="hud-exit-btn" id="btn-exit-game" aria-label="Exit game">✕</button>
+        <div class="hud-genre-tag" id="hud-genre-label">PILIPINAS</div>
+        <div class="hud-diff-tag" id="hud-diff-label">EASY</div>
+      </div>
+      <div class="hud-center">
+        <div class="timer-wrap">
+          <svg class="timer-ring" viewBox="0 0 60 60" aria-hidden="true">
+            <circle class="timer-ring-bg" cx="30" cy="30" r="26"/>
+            <circle class="timer-ring-fill" id="timer-ring-fill" cx="30" cy="30" r="26"/>
+          </svg>
+          <span class="timer-text" id="timer-display">60</span>
+        </div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-score-label">SCORE</div>
+        <div class="hud-score" id="hud-score">0</div>
+        <div class="hud-streak" id="hud-streak">🔥 ×0</div>
+      </div>
+    </div>
+
+    <div class="question-counter">
+      <span id="q-current">1</span><span class="q-sep">/</span><span id="q-total">10</span>
+    </div>
+
+    <div class="question-area" id="question-area">
+      <div class="question-card" id="question-card">
+        <div class="question-category" id="q-category">HISTORY</div>
+        <p class="question-text" id="q-text">Loading question...</p>
+      </div>
+    </div>
+
+    <div class="choices-grid" id="choices-grid">
+      <button class="choice-btn" data-index="0"><span class="choice-letter">A</span><span class="choice-text"></span></button>
+      <button class="choice-btn" data-index="1"><span class="choice-letter">B</span><span class="choice-text"></span></button>
+      <button class="choice-btn" data-index="2"><span class="choice-letter">C</span><span class="choice-text"></span></button>
+      <button class="choice-btn" data-index="3"><span class="choice-letter">D</span><span class="choice-text"></span></button>
+    </div>
+
+    <div class="feedback-flash" id="feedback-flash" aria-live="assertive"></div>
+    <div class="combo-burst" id="combo-burst" aria-hidden="true"></div>
+    <div class="particles-container" id="particles-container" aria-hidden="true"></div>
+  </section>
+
+  <section id="screen-result" class="screen">
+    <div class="result-wrap">
+      <div class="result-rank-badge" id="result-rank-badge">S</div>
+      <h2 class="result-title" id="result-title">LODI!</h2>
+      <div class="result-score-display">
+        <span class="result-score-label">FINAL SCORE</span>
+        <span class="result-score-val" id="result-score">0</span>
+      </div>
+      <div class="result-stats">
+        <div class="stat-block">
+          <span class="stat-num" id="stat-correct">0</span>
+          <span class="stat-lbl">CORRECT</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-num" id="stat-wrong">0</span>
+          <span class="stat-lbl">WRONG</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-num" id="stat-streak">0</span>
+          <span class="stat-lbl">BEST STREAK</span>
+        </div>
+      </div>
+
+      <div class="name-entry-block" id="name-entry-block">
+        <label class="name-label" for="player-name">ENTER YOUR NAME</label>
+        <input class="name-input pixel-input" id="player-name" type="text" maxlength="12" placeholder="BAYANI_MO" autocomplete="off" />
+        <button class="btn-primary pixel-btn" id="btn-save-score">💾 SAVE SCORE</button>
+      </div>
+
+      <div class="result-actions">
+        <button class="btn-primary pixel-btn" id="btn-retry">↺ PLAY AGAIN</button>
+        <button class="btn-secondary pixel-btn" id="btn-home">⌂ HOME</button>
+        <button class="btn-secondary pixel-btn" id="btn-view-scores">🏆 RANKINGS</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-rankings" class="screen">
+    <div class="rankings-wrap">
+      <h2 class="rankings-title">🏆 HALL OF FAME</h2>
+      <div class="rankings-tabs">
+        <button class="rtab active" data-rtab="ph">🇵🇭 PILIPINAS</button>
+        <button class="rtab" data-rtab="academic">🔬 AKADEMYA</button>
+        <button class="rtab" data-rtab="ent">🎮 TRENDZONE</button>
+      </div>
+      <div class="rankings-list" id="rankings-list"></div>
+      <button class="btn-secondary pixel-btn" id="btn-rankings-home">⌂ BACK</button>
+    </div>
+  </section>
+
+  <div class="exit-modal-overlay" id="exit-modal-overlay" aria-hidden="true">
+    <div class="exit-modal" role="dialog" aria-modal="true" aria-labelledby="exit-modal-title">
+      <div class="exit-modal-icon">⚠️</div>
+      <h3 class="exit-modal-title" id="exit-modal-title">QUIT GAME?</h3>
+      <p class="exit-modal-body">Your current progress and score will be lost.</p>
+      <div class="exit-modal-actions">
+        <button class="btn-primary pixel-btn" id="btn-exit-confirm">🚪 QUIT</button>
+        <button class="btn-secondary pixel-btn" id="btn-exit-cancel">▶ KEEP PLAYING</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="sfx-correct" preload="auto">
+    <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=" />
+  </audio>
+  <audio id="sfx-wrong" preload="auto">
+    <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=" />
+  </audio>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="{% static 'typeshift/game.js' %}"></script>
+</body>
+</html>
