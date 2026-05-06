@@ -1163,3 +1163,32 @@ body {
     transform: translate(calc(-50% + var(--tdx)), calc(-50% + var(--tdy))) scale(0.3);
   }
 }
+
+/* ─────────────────────────────────────
+   MUSIC TOGGLE BUTTON
+   ───────────────────────────────────── */
+#music-toggle {
+  position: fixed;
+  bottom: 18px;
+  right: 18px;
+  z-index: 10000;
+  width: 42px;
+  height: 42px;
+  border-radius: 0;
+  background: var(--bg-card);
+  border: 2px solid var(--accent-1);
+  box-shadow: 3px 3px 0 var(--accent-2), 0 0 12px var(--accent-glow);
+  color: var(--white);
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, box-shadow 0.15s;
+  image-rendering: pixelated;
+}
+
+#music-toggle:hover {
+  background: var(--accent-1);
+  box-shadow: 4px 4px 0 var(--accent-2), 0 0 20px var(--accent-glow);
+}

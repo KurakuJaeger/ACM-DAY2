@@ -240,6 +240,368 @@ function playSFX(type) {
 }
 
 /* ─────────────────────────────────────
+   LO-FI BACKGROUND MUSIC ENGINE
+   Procedural Web Audio API — no files needed
+   3 genre themes + intensity mode + mute toggle
+   ───────────────────────────────────── */
+const MUSIC = {
+  muted: false,
+  playing: false,
+  genre: 'ph',
+  intensity: 'normal', // 'normal' | 'tense'
+  masterGain: null,
+  reverbNode: null,
+  nodes: [],        // all active oscillators / sources to stop
+  scheduledUntil: 0,
+  bpm: 78,
+  scheduleAhead: 0.3,   // seconds ahead to schedule
+  lookahead: 100,       // ms scheduler interval
+  schedulerTimer: null,
+  currentBeat: 0,
+  loopLength: 8,        // beats per loop
+};
+
+/* ── Scale definitions per genre ── */
+const SCALES = {
+  ph:       [0, 2, 3, 7, 9],          // pentatonic minor — warm, folk
+  academic: [0, 2, 4, 7, 9],          // pentatonic major — bright, clean
+  ent:      [0, 3, 5, 7, 10],         // minor blues — groovy, cool
+};
+
+/* ── Root notes per genre (MIDI-like: 60=C4) ── */
+const ROOTS = { ph: 52, academic: 57, ent: 55 }; // E3, A3, G3
+
+function midiToHz(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function createReverb(ctx) {
+  const convolver = ctx.createConvolver();
+  const rate = ctx.sampleRate;
+  const length = rate * 1.8;
+  const impulse = ctx.createBuffer(2, length, rate);
+  for (let c = 0; c < 2; c++) {
+    const ch = impulse.getChannelData(c);
+    for (let i = 0; i < length; i++) {
+      ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.5);
+    }
+  }
+  convolver.buffer = impulse;
+  return convolver;
+}
+
+function initMusicGraph() {
+  const ctx = getAudioCtx();
+  MUSIC.masterGain = ctx.createGain();
+  MUSIC.masterGain.gain.value = MUSIC.muted ? 0 : 0.22;
+
+  MUSIC.reverbNode = createReverb(ctx);
+  const reverbGain = ctx.createGain();
+  reverbGain.gain.value = 0.28;
+
+  MUSIC.masterGain.connect(reverbGain);
+  reverbGain.connect(MUSIC.reverbNode);
+  MUSIC.reverbNode.connect(ctx.destination);
+  MUSIC.masterGain.connect(ctx.destination);
+}
+
+/* ── Lo-fi vinyl crackle noise ── */
+function scheduleVinylNoise(ctx, startTime, duration) {
+  if (MUSIC.muted) return;
+  const bufSize = ctx.sampleRate * duration;
+  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * 0.012;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const g = ctx.createGain();
+  g.gain.value = 0.18;
+  // Low-pass filter for warmth
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 3200;
+  src.connect(lp);
+  lp.connect(g);
+  g.connect(MUSIC.masterGain);
+  src.start(startTime);
+  MUSIC.nodes.push(src);
+}
+
+/* ── Bass note ── */
+function scheduleBass(ctx, startTime, noteOffset, duration, vol = 0.38) {
+  const scale = SCALES[MUSIC.genre];
+  const root = ROOTS[MUSIC.genre];
+  const hz = midiToHz(root - 12 + scale[noteOffset % scale.length]);
+
+  const osc = ctx.createOscillator();
+  osc.type = 'triangle';
+  osc.frequency.value = hz;
+
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, startTime);
+  env.gain.linearRampToValueAtTime(vol, startTime + 0.015);
+  env.gain.exponentialRampToValueAtTime(vol * 0.5, startTime + 0.08);
+  env.gain.exponentialRampToValueAtTime(0.001, startTime + duration * 0.85);
+
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = MUSIC.intensity === 'tense' ? 420 : 320;
+
+  osc.connect(env);
+  env.connect(lp);
+  lp.connect(MUSIC.masterGain);
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+  MUSIC.nodes.push(osc);
+}
+
+/* ── Pad chord ── */
+function schedulePad(ctx, startTime, chordDegrees, duration, vol = 0.09) {
+  const scale = SCALES[MUSIC.genre];
+  const root = ROOTS[MUSIC.genre];
+
+  chordDegrees.forEach(deg => {
+    const hz = midiToHz(root + scale[deg % scale.length]);
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = hz;
+
+    // Slight detune for warmth
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.value = hz * 1.003;
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, startTime);
+    env.gain.linearRampToValueAtTime(vol, startTime + 0.25);
+    env.gain.setValueAtTime(vol, startTime + duration - 0.3);
+    env.gain.linearRampToValueAtTime(0, startTime + duration);
+
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 900;
+
+    [osc, osc2].forEach(o => { o.connect(env); o.start(startTime); o.stop(startTime + duration); MUSIC.nodes.push(o); });
+    env.connect(lp);
+    lp.connect(MUSIC.masterGain);
+  });
+}
+
+/* ── Melody note ── */
+function scheduleMelody(ctx, startTime, noteOffset, octave, duration, vol = 0.12) {
+  const scale = SCALES[MUSIC.genre];
+  const root = ROOTS[MUSIC.genre];
+  const hz = midiToHz(root + octave * 12 + scale[noteOffset % scale.length]);
+
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = hz;
+
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, startTime);
+  env.gain.linearRampToValueAtTime(vol, startTime + 0.02);
+  env.gain.exponentialRampToValueAtTime(0.001, startTime + Math.max(duration * 0.9, 0.05));
+
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 2200;
+
+  osc.connect(env);
+  env.connect(lp);
+  lp.connect(MUSIC.masterGain);
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+  MUSIC.nodes.push(osc);
+}
+
+/* ── Hi-hat ── */
+function scheduleHat(ctx, startTime, vol = 0.07) {
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 8000;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(vol, startTime);
+  env.gain.exponentialRampToValueAtTime(0.001, startTime + 0.05);
+  src.connect(hp); hp.connect(env); env.connect(MUSIC.masterGain);
+  src.start(startTime);
+  MUSIC.nodes.push(src);
+}
+
+/* ── Kick ── */
+function scheduleKick(ctx, startTime, vol = 0.28) {
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(160, startTime);
+  osc.frequency.exponentialRampToValueAtTime(40, startTime + 0.12);
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(vol, startTime);
+  env.gain.exponentialRampToValueAtTime(0.001, startTime + 0.22);
+  osc.connect(env); env.connect(MUSIC.masterGain);
+  osc.start(startTime); osc.stop(startTime + 0.25);
+  MUSIC.nodes.push(osc);
+}
+
+/* ── Snare ── */
+function scheduleSnare(ctx, startTime, vol = 0.14) {
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 0.15, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 1200; bp.Q.value = 0.8;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(vol, startTime);
+  env.gain.exponentialRampToValueAtTime(0.001, startTime + 0.14);
+  src.connect(bp); bp.connect(env); env.connect(MUSIC.masterGain);
+  src.start(startTime);
+  MUSIC.nodes.push(src);
+}
+
+/* ── Main loop scheduler ── */
+const GENRE_PATTERNS = {
+  ph: {
+    // Chord progressions: scale degrees for pad
+    chords: [[0,2,4], [1,3,4], [2,4,1], [0,3,4]],
+    // Bass pattern: scale degree per beat (null = rest)
+    bass:   [0,null,2,null, 1,null,3,null],
+    // Melody: [scaleDeg, octave] or null per beat
+    melody: [[0,1],null,[2,1],null, [1,1],null,[4,0],null],
+  },
+  academic: {
+    chords: [[0,2,4],[2,4,1],[1,3,4],[0,2,3]],
+    bass:   [0,null,null,3, 2,null,null,1],
+    melody: [[0,1],[2,1],null,[4,1], null,[3,1],[2,1],null],
+  },
+  ent: {
+    chords: [[0,2,4],[3,1,4],[2,4,0],[1,3,4]],
+    bass:   [0,null,3,null, 2,null,0,null],
+    melody: [[2,1],null,[0,1],[4,0], null,[3,1],null,[1,1]],
+  },
+};
+
+function scheduleLoop(ctx) {
+  const secPerBeat = 60 / MUSIC.bpm;
+  const tense = MUSIC.intensity === 'tense';
+  const pat = GENRE_PATTERNS[MUSIC.genre];
+  const chordIdx = Math.floor(MUSIC.currentBeat / 2) % pat.chords.length;
+
+  // Schedule ahead window
+  while (MUSIC.scheduledUntil < ctx.currentTime + MUSIC.scheduleAhead) {
+    const t = MUSIC.scheduledUntil;
+    const beat = MUSIC.currentBeat % MUSIC.loopLength;
+
+    // Kick on beats 0 and 4
+    if (beat === 0 || beat === 4) scheduleKick(ctx, t, tense ? 0.35 : 0.28);
+
+    // Snare on beats 2 and 6
+    if (beat === 2 || beat === 6) scheduleSnare(ctx, t, tense ? 0.18 : 0.14);
+
+    // Hi-hats: every beat, louder on offbeats if tense
+    scheduleHat(ctx, t, tense ? 0.12 : 0.07);
+    if (tense) scheduleHat(ctx, t + secPerBeat * 0.5, 0.06); // extra offbeat hat
+
+    // Bass note
+    const bassNote = pat.bass[beat];
+    if (bassNote !== null) scheduleBass(ctx, t, bassNote, secPerBeat * 0.85, tense ? 0.45 : 0.38);
+
+    // Pad chord — every 2 beats
+    if (beat % 2 === 0) {
+      const chord = pat.chords[chordIdx];
+      schedulePad(ctx, t, chord, secPerBeat * 2, tense ? 0.06 : 0.09);
+    }
+
+    // Melody — skip some randomly for lo-fi feel
+    const melNote = pat.melody[beat];
+    if (melNote && Math.random() > (tense ? 0.15 : 0.35)) {
+      scheduleMelody(ctx, t, melNote[0], melNote[1], secPerBeat * 0.7, tense ? 0.16 : 0.12);
+    }
+
+    // Vinyl crackle — occasional, every 4 beats
+    if (beat === 0 && !tense) scheduleVinylNoise(ctx, t, secPerBeat * 4);
+
+    MUSIC.scheduledUntil += secPerBeat;
+    MUSIC.currentBeat++;
+  }
+}
+
+function startMusic(genre) {
+  if (MUSIC.playing) stopMusic(false);
+  const ctx = getAudioCtx();
+  if (ctx.state === 'suspended') ctx.resume();
+
+  if (!MUSIC.masterGain) initMusicGraph();
+
+  MUSIC.genre = genre || MUSIC.genre;
+  MUSIC.playing = true;
+  MUSIC.currentBeat = 0;
+  MUSIC.scheduledUntil = ctx.currentTime + 0.05;
+  MUSIC.intensity = 'normal';
+
+  // Fade in
+  MUSIC.masterGain.gain.cancelScheduledValues(ctx.currentTime);
+  MUSIC.masterGain.gain.setValueAtTime(0, ctx.currentTime);
+  MUSIC.masterGain.gain.linearRampToValueAtTime(MUSIC.muted ? 0 : 0.22, ctx.currentTime + 1.5);
+
+  MUSIC.schedulerTimer = setInterval(() => {
+    if (MUSIC.playing) scheduleLoop(ctx);
+  }, MUSIC.lookahead);
+}
+
+function stopMusic(fade = true) {
+  MUSIC.playing = false;
+  clearInterval(MUSIC.schedulerTimer);
+  if (MUSIC.masterGain) {
+    const ctx = getAudioCtx();
+    if (fade) {
+      MUSIC.masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+    }
+  }
+}
+
+function setMusicIntensity(level) {
+  // 'normal' or 'tense'
+  if (MUSIC.intensity === level) return;
+  MUSIC.intensity = level;
+  if (!MUSIC.masterGain) return;
+  const ctx = getAudioCtx();
+  const targetVol = level === 'tense' ? 0.32 : 0.22;
+  MUSIC.masterGain.gain.cancelScheduledValues(ctx.currentTime);
+  MUSIC.masterGain.gain.linearRampToValueAtTime(MUSIC.muted ? 0 : targetVol, ctx.currentTime + 0.5);
+}
+
+function switchMusicGenre(genre) {
+  if (MUSIC.genre === genre && MUSIC.playing) return;
+  MUSIC.genre = genre;
+  if (MUSIC.playing) {
+    // Crossfade: stop then restart
+    stopMusic(true);
+    setTimeout(() => startMusic(genre), 900);
+  }
+}
+
+function toggleMute() {
+  MUSIC.muted = !MUSIC.muted;
+  if (MUSIC.masterGain) {
+    const ctx = getAudioCtx();
+    const targetVol = MUSIC.muted ? 0 : (MUSIC.intensity === 'tense' ? 0.32 : 0.22);
+    MUSIC.masterGain.gain.cancelScheduledValues(ctx.currentTime);
+    MUSIC.masterGain.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.3);
+  }
+  // Update button
+  const btn = document.getElementById('music-toggle');
+  if (btn) btn.textContent = MUSIC.muted ? '🔇' : '🎵';
+  return MUSIC.muted;
+}
+
+/* ─────────────────────────────────────
    PARTICLE SYSTEM
    ───────────────────────────────────── */
 function spawnParticles(x, y, color, count = 12) {
@@ -307,7 +669,7 @@ function initLanding() {
       btn.classList.add('active');
       STATE.genre = btn.dataset.genre;
       applyGenreTheme(STATE.genre);
-
+      switchMusicGenre(STATE.genre);
       gsap.fromTo(btn, { scale: 0.9 }, { scale: 1, duration: 0.3, ease: 'back.out(2)' });
     });
   });
@@ -378,6 +740,7 @@ function startGame() {
 
   applyGenreTheme(STATE.genre);
   showScreen('screen-game');
+  startMusic(STATE.genre);
 
   setTimeout(() => {
     renderQuestion();
@@ -409,10 +772,13 @@ function startTimer() {
       if (STATE.timer <= 10) {
         fill.style.stroke = 'var(--wrong)';
         if (STATE.timer <= 5) playSFX('tick');
+        setMusicIntensity('tense');
       } else if (STATE.timer <= 20) {
         fill.style.stroke = 'var(--gold)';
+        setMusicIntensity('tense');
       } else {
         fill.style.stroke = 'var(--accent-1)';
+        setMusicIntensity('normal');
       }
     }
 
@@ -564,6 +930,7 @@ function showCombo(streak) {
    ───────────────────────────────────── */
 function endGame() {
   clearInterval(STATE.timerInterval);
+  stopMusic(true);
   playSFX('gameover');
 
   // Determine rank
@@ -1016,6 +1383,30 @@ function init() {
 
   // Water mouse trail
   initMouseTrail();
+
+  // Music toggle button (fixed corner)
+  const musicBtn = document.createElement('button');
+  musicBtn.id = 'music-toggle';
+  musicBtn.textContent = '🎵';
+  musicBtn.title = 'Toggle Music';
+  document.body.appendChild(musicBtn);
+  musicBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMute();
+    gsap.fromTo(musicBtn, { scale: 0.7 }, { scale: 1, duration: 0.3, ease: 'back.out(2)' });
+  });
+
+  // Start landing music on first user interaction
+  let musicStarted = false;
+  const startLandingMusic = () => {
+    if (musicStarted) return;
+    musicStarted = true;
+    startMusic('ph');
+    document.removeEventListener('click', startLandingMusic);
+    document.removeEventListener('keydown', startLandingMusic);
+  };
+  document.addEventListener('click', startLandingMusic);
+  document.addEventListener('keydown', startLandingMusic);
 
   // Handle visibility change (pause timer)
   document.addEventListener('visibilitychange', () => {
