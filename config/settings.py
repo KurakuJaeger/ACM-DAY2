@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "smoke",  # new: smoke tests app
+    "main",  # add this
 ]
 
 MIDDLEWARE = [
