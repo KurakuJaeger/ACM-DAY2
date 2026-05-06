@@ -162,6 +162,7 @@ let STATE = {
   answered: false,
   questionStartTime: 0,
   rankingsTab: 'ph',
+  paused: false,
 };
 
 /* ─────────────────────────────────────
@@ -602,6 +603,57 @@ function toggleMute() {
 }
 
 /* ─────────────────────────────────────
+   HAPTICS ENGINE
+   Vibration patterns inspired by tetr.io:
+   sharp taps for UI, rhythmic pulses for
+   game events, escalating for combos.
+   Gracefully no-ops if API unavailable.
+   ───────────────────────────────────── */
+const HAPTICS = {
+  enabled: true,
+
+  // Check support once
+  supported: typeof navigator !== 'undefined' && 'vibrate' in navigator,
+
+  vibrate(pattern) {
+    if (!this.enabled || !this.supported) return;
+    try { navigator.vibrate(pattern); } catch (e) { /* silently fail */ }
+  },
+
+  // ── UI interactions ──
+  tap()       { this.vibrate(10); },              // light button press
+  select()    { this.vibrate(18); },              // genre / diff select
+  navigate()  { this.vibrate([8, 30, 12]); },     // screen transition
+
+  // ── Game events ──
+  correct()   { this.vibrate([15, 25, 40]); },    // rising double-tap — feels rewarding
+  wrong()     { this.vibrate([80, 20, 30]); },    // long buzz then short — feels like a penalty
+
+  // ── Combo escalation (tetr.io-style cascading pulses) ──
+  combo(streak) {
+    if (streak <= 2) {
+      this.vibrate([20, 20, 20, 20, 40]);
+    } else if (streak <= 4) {
+      this.vibrate([20, 15, 30, 15, 50, 15, 70]);
+    } else if (streak <= 6) {
+      this.vibrate([15, 10, 25, 10, 40, 10, 60, 10, 90]);
+    } else {
+      // Mega combo — rapid staircase burst
+      this.vibrate([10, 8, 20, 8, 35, 8, 55, 8, 80, 8, 110]);
+    }
+  },
+
+  // ── Timer urgency ──
+  tick()      { this.vibrate(6); },               // gentle metronome pulse ≤5s
+  urgent()    { this.vibrate([12, 50, 12]); },    // double-tap ≤10s warning
+
+  // ── End states ──
+  gameover()  { this.vibrate([60, 40, 60, 40, 120]); },  // descending thuds
+  rankS()     { this.vibrate([20, 15, 30, 15, 50, 15, 80, 15, 120]); }, // victory fanfare
+  saveScore() { this.vibrate([10, 20, 10, 20, 40]); },   // save confirmation
+};
+
+/* ─────────────────────────────────────
    PARTICLE SYSTEM
    ───────────────────────────────────── */
 function spawnParticles(x, y, color, count = 12) {
@@ -671,6 +723,7 @@ function initLanding() {
       applyGenreTheme(STATE.genre);
       switchMusicGenre(STATE.genre);
       gsap.fromTo(btn, { scale: 0.9 }, { scale: 1, duration: 0.3, ease: 'back.out(2)' });
+      HAPTICS.select();
     });
   });
 
@@ -681,16 +734,19 @@ function initLanding() {
       btn.classList.add('active');
       STATE.difficulty = btn.dataset.diff;
       gsap.fromTo(btn, { scale: 0.9 }, { scale: 1, duration: 0.2, ease: 'back.out(2)' });
+      HAPTICS.select();
     });
   });
 
   // Play button
   $('#btn-play').addEventListener('click', () => {
+    HAPTICS.navigate();
     startGame();
   });
 
   // Rankings button
   $('#btn-scores').addEventListener('click', () => {
+    HAPTICS.tap();
     showRankings(STATE.rankingsTab);
     showScreen('screen-rankings');
   });
@@ -771,7 +827,12 @@ function startTimer() {
       fill.style.strokeDashoffset = offset;
       if (STATE.timer <= 10) {
         fill.style.stroke = 'var(--wrong)';
-        if (STATE.timer <= 5) playSFX('tick');
+        if (STATE.timer <= 5) {
+          playSFX('tick');
+          HAPTICS.tick();
+        } else if (STATE.timer <= 10) {
+          HAPTICS.urgent();
+        }
         setMusicIntensity('tense');
       } else if (STATE.timer <= 20) {
         fill.style.stroke = 'var(--gold)';
@@ -871,6 +932,11 @@ function handleAnswer(btn) {
     // Feedback
     showFeedback('+' + points, 'correct');
     playSFX(STATE.streak >= 3 ? 'combo' : 'correct');
+    if (STATE.streak >= 3) {
+      HAPTICS.combo(STATE.streak);
+    } else {
+      HAPTICS.correct();
+    }
 
     // Particles
     const rect = btn.getBoundingClientRect();
@@ -890,6 +956,7 @@ function handleAnswer(btn) {
     STATE.streak = 0;
     showFeedback('MALI!', 'wrong');
     playSFX('wrong');
+    HAPTICS.wrong();
     gsap.to('#screen-game', { x: -6, duration: 0.05, repeat: 5, yoyo: true, ease: 'none' });
   }
 
@@ -932,6 +999,7 @@ function endGame() {
   clearInterval(STATE.timerInterval);
   stopMusic(true);
   playSFX('gameover');
+  HAPTICS.gameover();
 
   // Determine rank
   const rank = RANK_THRESHOLDS.find(t => STATE.score >= t.min) || RANK_THRESHOLDS[RANK_THRESHOLDS.length - 1];
@@ -945,6 +1013,10 @@ function endGame() {
   $('#player-name').value = '';
 
   showScreen('screen-result');
+
+  // Rank S haptic fanfare
+  if (rank.rank === 'S') setTimeout(() => HAPTICS.rankS(), 500);
+  else if (rank.rank === 'A') setTimeout(() => HAPTICS.combo(5), 500);
 
   // Animate result elements in sequence
   gsap.fromTo('.result-rank-badge',
@@ -1037,14 +1109,17 @@ function initResultScreen() {
     $('#btn-save-score').textContent = '✓ SAVED!';
     $('#btn-save-score').disabled = true;
     playSFX('combo');
+    HAPTICS.saveScore();
   });
 
-  $('#btn-retry').addEventListener('click', () => startGame());
+  $('#btn-retry').addEventListener('click', () => { HAPTICS.navigate(); startGame(); });
   $('#btn-home').addEventListener('click', () => {
+    HAPTICS.tap();
     applyGenreTheme(STATE.genre);
     showScreen('screen-landing');
   });
   $('#btn-view-scores').addEventListener('click', () => {
+    HAPTICS.tap();
     showRankings(STATE.genre);
     showScreen('screen-rankings');
   });
@@ -1056,12 +1131,14 @@ function initResultScreen() {
 function initRankingsScreen() {
   $$('.rtab').forEach(tab => {
     tab.addEventListener('click', () => {
+      HAPTICS.tap();
       showRankings(tab.dataset.rtab);
       applyGenreTheme(tab.dataset.rtab);
     });
   });
 
   $('#btn-rankings-home').addEventListener('click', () => {
+    HAPTICS.tap();
     applyGenreTheme(STATE.genre);
     showScreen('screen-landing');
   });
@@ -1074,6 +1151,8 @@ function initChoiceButtons() {
   $('#choices-grid').addEventListener('click', (e) => {
     const btn = e.target.closest('.choice-btn');
     if (btn && !btn.disabled) {
+      // Light press tap before answer resolves
+      HAPTICS.tap();
       handleAnswer(btn);
     }
   });
@@ -1360,6 +1439,121 @@ function spawnTrailDrop(x, y) {
 }
 
 /* ─────────────────────────────────────
+   EXIT MODAL
+   ───────────────────────────────────── */
+function showExitModal() {
+  const overlay = document.getElementById('exit-modal-overlay');
+  if (!overlay) return;
+
+  // Pause the timer
+  if (STATE.timerInterval) {
+    clearInterval(STATE.timerInterval);
+    STATE.timerInterval = null;
+  }
+  STATE.paused = true;
+
+  overlay.setAttribute('aria-hidden', 'false');
+  overlay.classList.add('visible');
+  HAPTICS.navigate();
+
+  // Focus the cancel button (keep playing is the safer default)
+  setTimeout(() => {
+    const cancel = document.getElementById('btn-exit-cancel');
+    if (cancel) cancel.focus();
+  }, 100);
+}
+
+function hideExitModal() {
+  const overlay = document.getElementById('exit-modal-overlay');
+  if (!overlay) return;
+
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.classList.remove('visible');
+  STATE.paused = false;
+
+  // Resume timer only if game is still active
+  if (document.getElementById('screen-game').classList.contains('active') && STATE.timer > 0 && !STATE.answered) {
+    startTimerResume();
+  }
+}
+
+function startTimerResume() {
+  // Resumes from current STATE.timer value without resetting
+  clearInterval(STATE.timerInterval);
+  const circumference = 163.4;
+  const fill = document.getElementById('timer-ring-fill');
+  const display = document.getElementById('timer-display');
+
+  STATE.timerInterval = setInterval(() => {
+    STATE.timer--;
+    if (display) display.textContent = STATE.timer;
+
+    if (fill) {
+      const offset = circumference * (1 - STATE.timer / 60);
+      fill.style.strokeDashoffset = offset;
+      if (STATE.timer <= 10) {
+        fill.style.stroke = 'var(--wrong)';
+        if (STATE.timer <= 5) { playSFX('tick'); HAPTICS.tick(); }
+        else HAPTICS.urgent();
+        setMusicIntensity('tense');
+      } else if (STATE.timer <= 20) {
+        fill.style.stroke = 'var(--gold)';
+        setMusicIntensity('tense');
+      } else {
+        fill.style.stroke = 'var(--accent-1)';
+        setMusicIntensity('normal');
+      }
+    }
+
+    if (STATE.timer <= 0) {
+      clearInterval(STATE.timerInterval);
+      endGame();
+    }
+  }, 1000);
+}
+
+function initExitModal() {
+  const exitBtn    = document.getElementById('btn-exit-game');
+  const overlay    = document.getElementById('exit-modal-overlay');
+  const confirmBtn = document.getElementById('btn-exit-confirm');
+  const cancelBtn  = document.getElementById('btn-exit-cancel');
+
+  if (!exitBtn || !overlay) return;
+
+  // Open modal
+  exitBtn.addEventListener('click', () => showExitModal());
+
+  // Confirm quit — go home
+  confirmBtn.addEventListener('click', () => {
+    HAPTICS.tap();
+    hideExitModal();
+    clearInterval(STATE.timerInterval);
+    STATE.timerInterval = null;
+    stopMusic(true);
+    applyGenreTheme(STATE.genre);
+    showScreen('screen-landing');
+  });
+
+  // Cancel — resume game
+  cancelBtn.addEventListener('click', () => {
+    HAPTICS.tap();
+    hideExitModal();
+  });
+
+  // Click outside modal to cancel
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) hideExitModal();
+  });
+
+  // Escape key to cancel
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay.classList.contains('visible')) {
+      hideExitModal();
+    }
+  });
+}
+
+/* ─────────────────────────────────────
    INIT
    ───────────────────────────────────── */
 function init() {
@@ -1368,6 +1562,7 @@ function init() {
   initResultScreen();
   initRankingsScreen();
   initChoiceButtons();
+  initExitModal();
 
   // Ambient pixel spawner
   setInterval(spawnAmbientPixel, 600);
@@ -1394,6 +1589,22 @@ function init() {
     e.stopPropagation();
     toggleMute();
     gsap.fromTo(musicBtn, { scale: 0.7 }, { scale: 1, duration: 0.3, ease: 'back.out(2)' });
+  });
+
+  // Haptics toggle button (fixed corner, next to music)
+  const hapticsBtn = document.createElement('button');
+  hapticsBtn.id = 'haptics-toggle';
+  hapticsBtn.textContent = '📳';
+  hapticsBtn.title = 'Toggle Haptics';
+  hapticsBtn.style.cssText = 'position:fixed;bottom:60px;right:12px;z-index:9999;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:6px 10px;font-size:18px;cursor:pointer;line-height:1;';
+  document.body.appendChild(hapticsBtn);
+  hapticsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    HAPTICS.enabled = !HAPTICS.enabled;
+    hapticsBtn.textContent = HAPTICS.enabled ? '📳' : '📴';
+    hapticsBtn.title = HAPTICS.enabled ? 'Toggle Haptics' : 'Haptics Off';
+    if (HAPTICS.enabled) HAPTICS.tap(); // confirm with a tap
+    gsap.fromTo(hapticsBtn, { scale: 0.7 }, { scale: 1, duration: 0.3, ease: 'back.out(2)' });
   });
 
   // Start landing music on first user interaction
