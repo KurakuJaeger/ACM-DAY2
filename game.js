@@ -753,6 +753,246 @@ function spawnAmbientPixel() {
 }
 
 /* ─────────────────────────────────────
+   PIXEL CHARACTER WALKER
+   ───────────────────────────────────── */
+const CHAR_SPRITES = {
+  idle: [
+    // Frame 0 — standing
+    `<svg viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
+      <rect x="5" y="0" width="6" height="6" fill="var(--accent-1)"/>
+      <rect x="4" y="6" width="8" height="8" fill="var(--accent-3)"/>
+      <rect x="3" y="7" width="2" height="4" fill="var(--accent-3)"/>
+      <rect x="11" y="7" width="2" height="4" fill="var(--accent-3)"/>
+      <rect x="5" y="14" width="2" height="4" fill="var(--accent-1)"/>
+      <rect x="9" y="14" width="2" height="4" fill="var(--accent-1)"/>
+      <rect x="5" y="2" width="2" height="2" fill="var(--bg-primary)"/>
+      <rect x="9" y="2" width="2" height="2" fill="var(--bg-primary)"/>
+      <rect x="6" y="4" width="4" height="1" fill="var(--bg-primary)"/>
+    </svg>`,
+    // Frame 1 — slight bob
+    `<svg viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
+      <rect x="5" y="1" width="6" height="6" fill="var(--accent-1)"/>
+      <rect x="4" y="7" width="8" height="8" fill="var(--accent-3)"/>
+      <rect x="3" y="8" width="2" height="4" fill="var(--accent-3)"/>
+      <rect x="11" y="8" width="2" height="4" fill="var(--accent-3)"/>
+      <rect x="5" y="15" width="2" height="4" fill="var(--accent-1)"/>
+      <rect x="9" y="15" width="2" height="4" fill="var(--accent-1)"/>
+      <rect x="5" y="3" width="2" height="2" fill="var(--bg-primary)"/>
+      <rect x="9" y="3" width="2" height="2" fill="var(--bg-primary)"/>
+      <rect x="6" y="5" width="4" height="1" fill="var(--bg-primary)"/>
+    </svg>`,
+  ],
+  walk: [
+    // Frame 0 — left foot forward
+    `<svg viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
+      <rect x="5" y="0" width="6" height="6" fill="var(--accent-1)"/>
+      <rect x="4" y="6" width="8" height="8" fill="var(--accent-3)"/>
+      <rect x="2" y="7" width="2" height="5" fill="var(--accent-3)"/>
+      <rect x="12" y="7" width="2" height="5" fill="var(--accent-3)"/>
+      <rect x="4" y="14" width="2" height="4" fill="var(--accent-1)"/>
+      <rect x="10" y="14" width="3" height="2" fill="var(--accent-1)"/>
+      <rect x="10" y="16" width="2" height="2" fill="var(--accent-1)"/>
+      <rect x="5" y="2" width="2" height="2" fill="var(--bg-primary)"/>
+      <rect x="9" y="2" width="2" height="2" fill="var(--bg-primary)"/>
+      <rect x="6" y="4" width="4" height="1" fill="var(--bg-primary)"/>
+    </svg>`,
+    // Frame 1 — right foot forward
+    `<svg viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
+      <rect x="5" y="0" width="6" height="6" fill="var(--accent-1)"/>
+      <rect x="4" y="6" width="8" height="8" fill="var(--accent-3)"/>
+      <rect x="2" y="7" width="2" height="5" fill="var(--accent-3)"/>
+      <rect x="12" y="7" width="2" height="5" fill="var(--accent-3)"/>
+      <rect x="4" y="14" width="3" height="2" fill="var(--accent-1)"/>
+      <rect x="4" y="16" width="2" height="2" fill="var(--accent-1)"/>
+      <rect x="10" y="14" width="2" height="4" fill="var(--accent-1)"/>
+      <rect x="5" y="2" width="2" height="2" fill="var(--bg-primary)"/>
+      <rect x="9" y="2" width="2" height="2" fill="var(--bg-primary)"/>
+      <rect x="6" y="4" width="4" height="1" fill="var(--bg-primary)"/>
+    </svg>`,
+  ]
+};
+
+let charEl = null;
+let charState = { x: 80, y: 200, dir: 1, moving: false, frame: 0, frameTimer: 0, idleTimer: 0, targetX: 0, targetY: 0, phase: 'idle' };
+let charAnimFrame = null;
+let charLastTime = 0;
+
+function createPixelChar() {
+  charEl = document.createElement('div');
+  charEl.className = 'pixel-char';
+  charEl.style.left = charState.x + 'px';
+  charEl.style.top = charState.y + 'px';
+  charEl.innerHTML = CHAR_SPRITES.idle[0];
+  document.body.appendChild(charEl);
+}
+
+function pickNewTarget() {
+  const margin = 60;
+  charState.targetX = margin + Math.random() * (window.innerWidth - margin * 2);
+  charState.targetY = margin + Math.random() * (window.innerHeight - margin * 2);
+  charState.phase = 'walk';
+}
+
+function updatePixelChar(timestamp) {
+  if (!charEl) { charAnimFrame = requestAnimationFrame(updatePixelChar); return; }
+
+  const dt = Math.min((timestamp - charLastTime) / 1000, 0.1);
+  charLastTime = timestamp;
+
+  const speed = 55; // px/sec
+  const frameInterval = 0.18; // sec
+
+  if (charState.phase === 'idle') {
+    charState.idleTimer += dt;
+    charState.frameTimer += dt;
+    if (charState.frameTimer >= 0.5) {
+      charState.frameTimer = 0;
+      charState.frame = 1 - charState.frame;
+      charEl.innerHTML = CHAR_SPRITES.idle[charState.frame];
+    }
+    if (charState.idleTimer > 1.5 + Math.random() * 2) {
+      pickNewTarget();
+    }
+  } else {
+    const dx = charState.targetX - charState.x;
+    const dy = charState.targetY - charState.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 4) {
+      charState.phase = 'idle';
+      charState.idleTimer = 0;
+      charState.frame = 0;
+    } else {
+      const nx = dx / dist;
+      const ny = dy / dist;
+      charState.x += nx * speed * dt;
+      charState.y += ny * speed * dt;
+      charState.dir = nx > 0 ? 1 : -1;
+
+      charState.frameTimer += dt;
+      if (charState.frameTimer >= frameInterval) {
+        charState.frameTimer = 0;
+        charState.frame = 1 - charState.frame;
+      }
+      charEl.innerHTML = CHAR_SPRITES.walk[charState.frame];
+    }
+
+    charEl.style.left = charState.x + 'px';
+    charEl.style.top = charState.y + 'px';
+    charEl.style.transform = charState.dir < 0 ? 'scaleX(-1)' : 'scaleX(1)';
+  }
+
+  charAnimFrame = requestAnimationFrame(updatePixelChar);
+}
+
+/* ─────────────────────────────────────
+   WATER RIPPLE CLICK FX
+   ───────────────────────────────────── */
+function spawnWaterRipple(x, y) {
+  // 3 concentric ripple rings
+  [1, 2, 3].forEach(n => {
+    const ring = document.createElement('div');
+    ring.className = `water-ripple water-ripple-${n}`;
+    ring.style.left = x + 'px';
+    ring.style.top = y + 'px';
+    document.body.appendChild(ring);
+    setTimeout(() => ring.remove(), 900);
+  });
+
+  // small water droplets
+  const count = 7;
+  for (let i = 0; i < count; i++) {
+    const drop = document.createElement('div');
+    drop.className = 'water-drop';
+    const angle = (i / count) * Math.PI * 2;
+    const dist = 30 + Math.random() * 25;
+    drop.style.left = x + 'px';
+    drop.style.top = y + 'px';
+    drop.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
+    drop.style.setProperty('--dy', Math.sin(angle) * dist + 'px');
+    drop.style.background = i % 2 === 0 ? 'var(--accent-3)' : 'var(--accent-1)';
+    document.body.appendChild(drop);
+    setTimeout(() => drop.remove(), 600);
+  }
+}
+
+function initWaterRipple() {
+  document.addEventListener('mousedown', (e) => {
+    spawnWaterRipple(e.clientX, e.clientY);
+  });
+  document.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    spawnWaterRipple(t.clientX, t.clientY);
+  }, { passive: true });
+}
+
+/* ─────────────────────────────────────
+   WATER MOUSE TRAIL
+   ───────────────────────────────────── */
+const mouseTrail = {
+  points: [],
+  mouse: { x: -999, y: -999 },
+  lastSpawn: 0,
+  active: false,
+};
+
+function initMouseTrail() {
+  document.addEventListener('mousemove', (e) => {
+    mouseTrail.mouse.x = e.clientX;
+    mouseTrail.mouse.y = e.clientY;
+    mouseTrail.active = true;
+  });
+  document.addEventListener('mouseleave', () => { mouseTrail.active = false; });
+
+  // Touch support
+  document.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    mouseTrail.mouse.x = t.clientX;
+    mouseTrail.mouse.y = t.clientY;
+    mouseTrail.active = true;
+  }, { passive: true });
+  document.addEventListener('touchend', () => { mouseTrail.active = false; });
+
+  requestAnimationFrame(tickMouseTrail);
+}
+
+function tickMouseTrail(timestamp) {
+  // Spawn a new droplet every ~40ms while moving
+  if (mouseTrail.active && timestamp - mouseTrail.lastSpawn > 40) {
+    mouseTrail.lastSpawn = timestamp;
+    spawnTrailDrop(mouseTrail.mouse.x, mouseTrail.mouse.y);
+  }
+  requestAnimationFrame(tickMouseTrail);
+}
+
+function spawnTrailDrop(x, y) {
+  // Main teardrop orb
+  const orb = document.createElement('div');
+  orb.className = 'trail-orb';
+  orb.style.left = x + 'px';
+  orb.style.top  = y + 'px';
+  // slight random drift so trail feels fluid
+  orb.style.setProperty('--tdx', (Math.random() - 0.5) * 12 + 'px');
+  orb.style.setProperty('--tdy', (Math.random() * 10 + 4) + 'px');
+  document.body.appendChild(orb);
+  setTimeout(() => orb.remove(), 700);
+
+  // Tiny satellite droplet
+  if (Math.random() < 0.5) {
+    const sat = document.createElement('div');
+    sat.className = 'trail-sat';
+    const angle = Math.random() * Math.PI * 2;
+    const r = 6 + Math.random() * 8;
+    sat.style.left = (x + Math.cos(angle) * r) + 'px';
+    sat.style.top  = (y + Math.sin(angle) * r) + 'px';
+    sat.style.setProperty('--tdx', (Math.random() - 0.5) * 18 + 'px');
+    sat.style.setProperty('--tdy', (Math.random() * 14 + 6) + 'px');
+    document.body.appendChild(sat);
+    setTimeout(() => sat.remove(), 500);
+  }
+}
+
+/* ─────────────────────────────────────
    INIT
    ───────────────────────────────────── */
 function init() {
@@ -764,6 +1004,18 @@ function init() {
 
   // Ambient pixel spawner
   setInterval(spawnAmbientPixel, 600);
+
+  // Pixel character walker
+  createPixelChar();
+  charLastTime = performance.now();
+  charAnimFrame = requestAnimationFrame(updatePixelChar);
+  pickNewTarget();
+
+  // Water ripple click FX
+  initWaterRipple();
+
+  // Water mouse trail
+  initMouseTrail();
 
   // Handle visibility change (pause timer)
   document.addEventListener('visibilitychange', () => {
