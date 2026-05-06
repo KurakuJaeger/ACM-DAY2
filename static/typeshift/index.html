@@ -71,6 +71,7 @@
     <!-- HUD -->
     <div class="game-hud">
       <div class="hud-left">
+        <button class="hud-exit-btn" id="btn-exit-game" aria-label="Exit game">✕</button>
         <div class="hud-genre-tag" id="hud-genre-label">PILIPINAS</div>
         <div class="hud-diff-tag" id="hud-diff-label">EASY</div>
       </div>
@@ -175,6 +176,19 @@
       <button class="btn-secondary pixel-btn" id="btn-rankings-home">⌂ BACK</button>
     </div>
   </section>
+
+  <!-- ===== MODAL: EXIT CONFIRM ===== -->
+  <div class="exit-modal-overlay" id="exit-modal-overlay" aria-hidden="true">
+    <div class="exit-modal" role="dialog" aria-modal="true" aria-labelledby="exit-modal-title">
+      <div class="exit-modal-icon">⚠️</div>
+      <h3 class="exit-modal-title" id="exit-modal-title">QUIT GAME?</h3>
+      <p class="exit-modal-body">Your current progress and score will be lost.</p>
+      <div class="exit-modal-actions">
+        <button class="btn-primary pixel-btn" id="btn-exit-confirm">🚪 QUIT</button>
+        <button class="btn-secondary pixel-btn" id="btn-exit-cancel">▶ KEEP PLAYING</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ===== SFX AUDIO ===== -->
   <audio id="sfx-correct" preload="auto">
