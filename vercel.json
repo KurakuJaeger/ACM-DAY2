@@ -1,12 +1,13 @@
 {
   "version": 2,
-  "buildCommand": "python manage.py collectstatic --noinput",
+  "buildCommand": "pip install -r requirements.txt && python manage.py collectstatic --noinput",
   "builds": [
     {
       "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
-        "build_command": "python manage.py collectstatic --noinput"
+        "pythonVersion": "3.12",
+        "build_command": "pip install -r requirements.txt && python manage.py collectstatic --noinput"
       }
     }
   ],
