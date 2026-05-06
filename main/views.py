@@ -4,4 +4,4 @@ from django.shortcuts import render
 # Create your views here.
 
 def index(request):
-    return HttpResponse("Hello from main app")
+    return render(request, 'static/typeshift/index.html')
