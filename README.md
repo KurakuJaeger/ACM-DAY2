@@ -50,3 +50,4 @@ Personal Score
 Ranking with other users
 Can be played alone. 
 Can be play using phone and web.
+a
